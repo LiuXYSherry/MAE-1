@@ -10,8 +10,18 @@ from tqdm import tqdm
 from model import *
 from utils import setup_seed
 
+"""
+resources referenced: https://towardsdatascience.com/a-simple-guide-to-command-line-arguments-with-argparse-6824c30ab1c3 for argparse
+
+"""
+
 if __name__ == '__main__':
+    # argparse standard Python library: supports parsing of command line arguments,
+    # Not need to manually set variables inside of the code, can allow user inputs from command line
+    # Create/initialize the parser to add custom args
     parser = argparse.ArgumentParser()
+    
+    # Add an argument
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--max_device_batch_size', type=int, default=512)
@@ -21,7 +31,8 @@ if __name__ == '__main__':
     parser.add_argument('--total_epoch', type=int, default=2000)
     parser.add_argument('--warmup_epoch', type=int, default=200)
     parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
-
+    
+    # Parse the argument
     args = parser.parse_args()
 
     setup_seed(args.seed)
@@ -31,13 +42,17 @@ if __name__ == '__main__':
 
     assert batch_size % load_batch_size == 0
     steps_per_update = batch_size // load_batch_size
-
+    
+    # prepare dataset
     train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
+    
+    # prepare file for saving training curves
     writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
+    # create model and set LR
     model = MAE_ViT(mask_ratio=args.mask_ratio).to(device)
     optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.95), weight_decay=args.weight_decay)
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
@@ -54,6 +69,8 @@ if __name__ == '__main__':
             predicted_img, mask = model(img)
             loss = torch.mean((predicted_img - img) ** 2 * mask) / args.mask_ratio
             loss.backward()
+       
+            # for updating optimizer
             if step_count % steps_per_update == 0:
                 optim.step()
                 optim.zero_grad()
@@ -74,5 +91,5 @@ if __name__ == '__main__':
             img = rearrange(img, '(v h1 w1) c h w -> c (h1 h) (w1 v w)', w1=2, v=3)
             writer.add_image('mae_image', (img + 1) / 2, global_step=e)
         
-        ''' save model '''
+        ''' save model, this need to be added'''
         torch.save(model, args.model_path)

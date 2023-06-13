@@ -47,6 +47,8 @@ if __name__ == '__main__':
     train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
+    ## add valid dataloader
+    val_dataloader = torch.utils.data.DataLoader(val_dataset, load_batch_size, shuffle=True, num_workers=4)
     
     # prepare file for saving training curves
     writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
@@ -82,6 +84,25 @@ if __name__ == '__main__':
 
         ''' visualize the first 16 predicted images on val dataset'''
         model.eval()
+        
+        ## add val loss
+        valid_losses = []
+        for img, label in tqdm(iter(val_dataloader)):
+            with torch.no_grad():
+                img = img.to(device)
+
+                # outputs = net(inputs)
+                # loss = criterion(outputs, labels)
+                predicted_img, mask = model(img)
+                loss = torch.mean((predicted_img - img) ** 2 * mask) / args.mask_ratio
+
+                # valid_loss += loss.item() * inputs.size(0)
+                valid_losses.append(loss.item())
+        avg_loss_val = sum(valid_losses) / len(valid_losses)
+        writer.add_scalar('mae_loss_val', avg_loss_val, global_step=e)
+        print(f'In epoch {e}, average val loss is {avg_loss_val}.')
+                
+        
         with torch.no_grad():
             val_img = torch.stack([val_dataset[i][0] for i in range(16)])
             val_img = val_img.to(device)
